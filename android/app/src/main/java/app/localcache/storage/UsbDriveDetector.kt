@@ -94,20 +94,12 @@ object UsbDriveDetector {
         }
     }
 
-    fun defaultCacheDir(usbPath: String): File = File(usbPath, "LocalCache")
+    fun defaultCacheDir(usbPath: String): File = SharedMovies.directory(File(usbPath))
 
     /**
-     * App-specific folder on the USB stick — writable without special permissions on Android 10+.
-     * Falls back to [usbPath]/LocalCache if no matching external-files dir is found.
+     * Public Movies survives uninstall. Android 11 requires explicit all-files access.
      */
     fun resolveWritableCacheDir(context: Context, usbPath: String): File {
-        val dirs = context.getExternalFilesDirs(null) ?: return defaultCacheDir(usbPath)
-        for (dir in dirs) {
-            if (dir == null) continue
-            if (dir.absolutePath.startsWith(usbPath.trimEnd('/'))) {
-                return File(dir, "LocalCache")
-            }
-        }
         return defaultCacheDir(usbPath)
     }
 
@@ -166,16 +158,18 @@ object UsbDriveDetector {
             return WriteCheck(false, mount?.readOnly == true, fsType, maxFileGb, "Could not create folder")
         }
 
-        val test = File(dir, ".write_test")
+        var test: File? = null
         return try {
+            test = File.createTempFile(".localcache-probe-", ".tmp", dir)
             test.writeText("ok")
-            test.delete()
             WriteCheck(true, false, fsType, maxFileGb, null)
         } catch (e: Exception) {
             val message = e.message ?: "Write blocked"
             val readOnly = mount?.readOnly == true || message.contains("EROFS", ignoreCase = true) ||
                 message.contains("Read-only", ignoreCase = true)
             WriteCheck(false, readOnly, fsType, maxFileGb, message)
+        } finally {
+            test?.delete()
         }
     }
 

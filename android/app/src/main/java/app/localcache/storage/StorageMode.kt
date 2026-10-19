@@ -1,6 +1,8 @@
 package app.localcache.storage
 
 import android.content.Context
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import app.localcache.BuildConfig
 import app.localcache.Prefs
@@ -107,6 +109,11 @@ object StorageMode {
     }
 
     fun selectUsb(context: Context, usbRootPath: String): EnableResult {
+        if (DownloadEngine.isBusy()) return EnableResult(false, "Pausa la descarga antes de cambiar de carpeta.")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return EnableResult(false, "Requiere Android 8 o posterior.")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            return EnableResult(false, "Autoriza el acceso a archivos para usar Movies en la raíz del USB.")
+        }
         val root = File(usbRootPath)
         if (!root.isDirectory) {
             return EnableResult(false, "USB path not found: $usbRootPath")
@@ -124,9 +131,18 @@ object StorageMode {
             return EnableResult(false, "Cannot write to USB (${check.fsType ?: "?"}): $why")
         }
 
-        prepareForUsbSelection(context)
+        val legacy = context.getExternalFilesDirs(null).orEmpty().filterNotNull()
+            .filter { it.absolutePath.startsWith(drive.path.trimEnd('/') + "/") }
+            .map { File(it, "LocalCache") }
+        val moved = try {
+            legacy.sumOf { SharedMovies.migrateOwned(it, cacheDir) }
+        } catch (_: Exception) {
+            return EnableResult(false, "No se completó el traslado. No se reemplazan archivos existentes; revisa ambas carpetas.")
+        }
         Prefs.setUsbSelection(context, cacheDir.absolutePath, drive.label, drive.path)
-        val importMsg = AddonConfig.importFromUsb(context, File(drive.path), cacheDir)
+        invalidateStreamCaches(context)
+        val completed = CacheOwnership.mediaFiles(cacheDir).filterNot { it.name.endsWith(".part") }
+        android.media.MediaScannerConnection.scanFile(context, completed.map { it.absolutePath }.toTypedArray(), null, null)
         val fatNote = if (check.fileSizeTooSmall) {
             "\nWarning: filesystem looks like FAT32 (max ~4 GB/file). Prefer exFAT."
         } else {
@@ -135,7 +151,7 @@ object StorageMode {
         Log.i(TAG, "USB selected ${drive.path} -> ${cacheDir.absolutePath}")
         return EnableResult(
             true,
-            "USB ready: ${drive.label}\n${cacheDir.absolutePath}\n$importMsg$fatNote",
+            "Movies listo: ${drive.label}\n${cacheDir.absolutePath}\nArchivos trasladados: $moved. No se borran al desinstalar.$fatNote",
         )
     }
 

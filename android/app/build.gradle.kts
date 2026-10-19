@@ -16,8 +16,8 @@ android {
         applicationId = "app.localcache.d4n1984"
         minSdk = 24
         targetSdk = 34
-        versionCode = 82
-        versionName = "0.5.9-d4n.2"
+        versionCode = 83
+        versionName = "0.5.9-d4n.3"
         buildConfigField("boolean", "WUPLAY_MODE", "false")
         buildConfigField("String", "PREFS_FILE", "\"local_cache_d4n1984\"")
         buildConfigField("int", "DEFAULT_PORT", "7100")

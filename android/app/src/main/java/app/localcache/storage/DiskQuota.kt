@@ -8,7 +8,7 @@ import java.util.Locale
 
 /**
  * Keeps the cache folder under a fixed size on the USB stick (default 120 GB of a 128 GB
- * drive) by deleting the least recently used movies to make room for a new one.
+ * drive) without automatically deleting existing movies.
  */
 object DiskQuota {
     private const val TAG = "DiskQuota"
@@ -79,47 +79,13 @@ object DiskQuota {
      * Files belonging to [keepKeys], to an active download, or watched in the last
      * 15 minutes are left alone.
      */
+    // Shared Movies is a persistent library, not an evictable cache.
     fun ensureSpace(context: Context, requiredBytes: Long, keepKeys: Set<String>): Result {
-        val root = CachePaths.cacheRoot(context) ?: return Result(0, 0, 0, false)
-        val quota = effectiveQuotaBytes(context)
-        var usage = usageBytes(context)
-        var free = freeSpaceOnDrive(context)
-        var freed = 0L
-
-        val target = (quota - requiredBytes).coerceAtLeast(0)
-
-        // Free space matters as much as the quota: the drive can be full while usage is
-        // still under the limit, and then no amount of quota headroom helps.
-        if (usage > target || free < requiredBytes) {
-            val protectedPaths = protectedPaths(keepKeys)
-            val candidates = CacheOwnership.mediaFiles(root)
-                .filter {
-                    it.isFile &&
-                        it.absolutePath !in protectedPaths &&
-                        !it.name.endsWith(".meta.json")
-                }
-                .sortedBy { it.lastModified() }
-
-            for (file in candidates) {
-                if (usage <= target && free >= requiredBytes) break
-                val size = file.length()
-                val name = file.name
-                if (file.delete()) {
-                    usage -= size
-                    free += size
-                    freed += size
-                    LocalLibrary.deleteMeta(File(file.absolutePath.removeSuffix(".part")))
-                    forgetByPath(file.absolutePath)
-                    Log.i(TAG, "removed $name (${size / (1024 * 1024)} MB) to make room")
-                }
-            }
-        }
-
-        val room = minOf(quota - usage, free).coerceAtLeast(0)
-        if (freed > 0) {
-            Log.i(TAG, "freed ${freed / (1024 * 1024)} MB — now ${usage / GB} / ${quota / GB} GB")
-        }
-        return Result(freed, usage, room, room >= requiredBytes)
+        if (CachePaths.cacheRoot(context) == null) return Result(0, 0, 0, false)
+        val used = usageBytes(context)
+        val room = PersistentSpace.room(effectiveQuotaBytes(context), used,
+            freeSpaceOnDrive(context), DRIVE_HEADROOM)
+        return Result(0, used, room, room >= requiredBytes)
     }
 
     /** Trim back under quota, e.g. when the server starts. */

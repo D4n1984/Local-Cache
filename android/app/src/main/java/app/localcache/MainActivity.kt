@@ -1,693 +1,126 @@
 package app.localcache
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.text.InputType
-import android.util.Log
+import android.os.Environment
+import android.provider.Settings
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import app.localcache.config.AddonConfig
-import app.localcache.model.UsbVolume
-import app.localcache.net.LanAddress
-import app.localcache.net.LanReachability
-import app.localcache.net.PublicIpDetector
-import app.localcache.server.PortFinder
-import app.localcache.server.RequestLog
-import app.localcache.server.ServerManager
-import app.localcache.storage.DiskQuota
 import app.localcache.storage.DownloadEngine
 import app.localcache.storage.StorageMode
 import app.localcache.storage.UsbDriveDetector
-import app.localcache.update.UpdateChecker
-import java.io.File
-import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
+/** Download-manager home. No add-on, manifest credentials, server or cache wipe controls. */
 class MainActivity : AppCompatActivity() {
-
-    private lateinit var updateText: TextView
-    private lateinit var statusText: TextView
-    private lateinit var urlText: TextView
-    private lateinit var ipText: TextView
-    private lateinit var usbText: TextView
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var verifyJob: Job? = null
-    private var statusJob: Job? = null
-    private var updateJob: Job? = null
-    private var serverRunning = false
-    private var lastVerifyMessage: String? = null
-    private var updateStatus: UpdateChecker.Status? = null
+    private lateinit var info: TextView
+    private var selectionBusy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        serverRunning = ServerManager.isRunning()
-
-        updateText = findViewById(R.id.updateText)
-        statusText = findViewById(R.id.statusText)
-        urlText = findViewById(R.id.urlText)
-        ipText = findViewById(R.id.ipText)
-        usbText = findViewById(R.id.usbText)
-
-        findViewById<Button>(R.id.btnRefreshIp).setOnClickListener {
-            refreshLanIp(showDialogIfMultiple = true)
-        }
-        findViewById<Button>(R.id.btnRefreshIp).visibility = android.view.View.GONE
-
-        val btnPublicIp = findViewById<Button>(R.id.btnPublicIp)
-        if (BuildConfig.WUPLAY_MODE) {
-            btnPublicIp.visibility = android.view.View.VISIBLE
-            btnPublicIp.setOnClickListener { promptPublicIp() }
-        } else {
-            btnPublicIp.visibility = android.view.View.GONE
-        }
-
-        findViewById<Button>(R.id.btnHealthCheck).setOnClickListener {
-            runHealthCheck()
-        }
-
-        findViewById<Button>(R.id.btnPickUsb).setOnClickListener {
-            promptUsbSelection(force = true)
-        }
-
-        findViewById<Button>(R.id.btnEditConfig).setOnClickListener {
-            promptEditConfigOnTv()
-        }
-
-        findViewById<Button>(R.id.btnCancelDownload).setOnClickListener {
-            promptCancelDownload()
-        }
-
-        findViewById<Button>(R.id.btnDeleteCache).setOnClickListener {
-            promptDeleteCache()
-        }
-
-        findViewById<Button>(R.id.btnStart).setOnClickListener {
-            refreshLanIp(showDialogIfMultiple = false)
-            if (!StorageMode.isReady(this)) {
-                statusText.text = "Choose USB or internal storage first"
-                promptUsbSelection(force = true)
-                return@setOnClickListener
-            }
-            startLocalServer()
-        }
-
-        findViewById<Button>(R.id.btnStop).setOnClickListener {
-            stopLocalServer()
-        }
-        findViewById<Button>(R.id.btnDownloads).setOnClickListener {
-            startActivity(android.content.Intent(this, ExternalDownloadActivity::class.java))
-        }
-
-        refreshLanIp(showDialogIfMultiple = false)
-        refreshUi()
-        checkForUpdate()
-        if (BuildConfig.WUPLAY_MODE && Prefs.publicHost(this) == null) {
-            detectPublicIpQuiet()
-        }
-
-        if (Prefs.cacheDirPath(this) == null) {
-            promptUsbSelection(force = false)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        serverRunning = ServerManager.isRunning()
-        statusJob?.cancel()
-        statusJob = scope.launch {
-            while (true) {
-                refreshUi()
-                delay(3_000)
-            }
-        }
-        if (updateStatus == null) checkForUpdate()
-    }
-
-    override fun onPause() {
-        statusJob?.cancel()
-        statusJob = null
-        super.onPause()
-    }
-
-    override fun onDestroy() {
-        verifyJob?.cancel()
-        statusJob?.cancel()
-        updateJob?.cancel()
-        scope.cancel()
-        super.onDestroy()
-    }
-
-    private fun checkForUpdate() {
-        updateJob?.cancel()
-        updateJob = scope.launch {
-            val status = withContext(Dispatchers.IO) {
-                UpdateChecker.check(force = false)
-            }
-            updateStatus = status
-            refreshUi()
-        }
-    }
-
-    private fun startLocalServer() {
-        if (serverRunning && ServerManager.isRunning()) {
-            statusText.text = "Server already running on port ${Prefs.serverPort(this)}"
-            return
-        }
-
-        try {
-            statusText.text = "Starting server…"
-            val started = ServerManager.start(this)
-            CacheForegroundService.start(this)
-            serverRunning = true
-            statusText.text = buildString {
-                append("Server running on port ${started.port}")
-                started.portNote?.let { append("\n$it") }
-                append("\nOpen ${AppVariant.clientName} and add the install URL below.")
-            }
-            refreshUi()
-            // Quiet LAN ping after bind (no dialog) — full report is Health check.
-            verifyJob?.cancel()
-            verifyJob = scope.launch {
-                delay(800)
-                val lan = LanReachability.verify(
-                    this@MainActivity,
-                    port = Prefs.serverPort(this@MainActivity),
-                )
-                lastVerifyMessage = if (lan.ok) "✓ ${lan.message}" else "✗ ${lan.message}"
-                refreshUi()
-            }
-        } catch (e: IOException) {
-            Log.e(TAG, "Server start failed", e)
-            serverRunning = false
-            val tried = PortFinder.candidates.joinToString()
-            statusText.text = "Could not start server.\n${e.message}\nPorts tried: $tried"
-            Toast.makeText(this, "Bind failed", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Log.e(TAG, "Server start failed", e)
-            serverRunning = false
-            statusText.text = "Server failed: ${e.message}"
-        }
-    }
-
-    private fun stopLocalServer() {
-        CacheForegroundService.stop(this)
-        ServerManager.stop()
-        serverRunning = false
-        lastVerifyMessage = null
-        statusText.text = "Server stopped"
-        refreshUi()
-    }
-
-    private fun refreshLanIp(showDialogIfMultiple: Boolean) {
-        val all = Prefs.allDetected(this)
-        Prefs.refreshDetectedLanIp(this)
-
-        if (showDialogIfMultiple && all.size > 1 && Prefs.manualLanHost(this) == null) {
-            showIpPicker(all)
-        }
-        refreshUi()
-    }
-
-    private fun runHealthCheck() {
-        verifyJob?.cancel()
-        verifyJob = scope.launch {
-            lastVerifyMessage = "Running health check…"
-            refreshUi()
-            statusText.text = "Running health check…"
-
-            val report = HealthCheck.run(this@MainActivity)
-            val message = HealthCheck.formatMessage(this@MainActivity, report)
-            lastVerifyMessage = if (report.allOk) {
-                "Health: all checks passed"
-            } else {
-                "Health: ${report.items.count { !it.ok }} issue(s) — see dialog"
-            }
-            refreshUi()
-
-            AlertDialog.Builder(this@MainActivity)
-                .setTitle(if (report.allOk) "Health check — OK" else "Health check — issues found")
-                .setMessage(message)
-                .setPositiveButton("OK", null)
-                .show()
-        }
-    }
-
-    private fun refreshUi() {
-        val used = Prefs.lanHost(this)
-        val port = Prefs.serverPort(this)
-        val cfg = AddonConfig.load(this)
-        val update = updateStatus ?: UpdateChecker.peek()
-
-        if (update?.updateAvailable == true) {
-            updateText.visibility = android.view.View.VISIBLE
-            updateText.text = buildString {
-                append(update.bannerLine())
-                append("\nLocal settings (ADB tunnel): ")
-                append(Prefs.settingsUrl(this@MainActivity))
-                append("\nor download: ")
-                append(update.apkUrl ?: update.releaseUrl ?: UpdateChecker.REPO_RELEASES_URL)
-            }
-        } else {
-            updateText.visibility = android.view.View.GONE
-            updateText.text = ""
-        }
-
-        statusText.text = when {
-            !serverRunning ->
-                "Stopped — open this app and tap Start server before using ${AppVariant.clientName}"
-            !cfg.hasAnyUpstream() -> "Server running — configure Torrentio/Comet manifests next"
-            else -> "Server running on port $port"
-        }
-
-        urlText.text = buildString {
-            appendLine("1) Configure on TV, or use an ADB tunnel from your computer:")
-            appendLine("adb forward tcp:$port tcp:$port")
-            appendLine(Prefs.settingsUrl(this@MainActivity))
-            appendLine("Paste your Torrentio / Comet manifest.json URLs, then Save.")
-            appendLine()
-            if (BuildConfig.WUPLAY_MODE) {
-                appendLine("2) Install in WuPlay (config.wuplay.app needs the internet URL):")
-                appendLine(Prefs.wuplayInstallUrl(this@MainActivity))
-                if (Prefs.publicHost(this@MainActivity) == null) {
-                    appendLine("(tap Set public IP — Preview cannot reach 192.168.x.x)")
-                } else {
-                    appendLine("Router: forward TCP $port → this TV (${Prefs.lanHost(this@MainActivity)})")
-                }
-            } else {
-                appendLine("2) Then install in Stremio (on this TV):")
-                appendLine("Stremio → Add-ons → Add Add-on →")
-                appendLine(Prefs.stremioInstallUrl(this@MainActivity))
-            }
-            appendLine()
-            appendLine("Test / health:")
-            appendLine(Prefs.healthUrl(this@MainActivity))
-            Prefs.publicHealthUrl(this@MainActivity)?.let {
-                appendLine("Public health: $it")
-            }
-            if (serverRunning) {
-                appendLine()
-                append(RequestLog.summary())
-            }
-        }
-
-        ipText.text = buildString {
-            appendLine("LAN IP for phone/PC (same Wi‑Fi):")
-            appendLine("Using: $used:$port")
-            Prefs.manualLanHost(this@MainActivity)?.let {
-                appendLine("Source: manual choice")
-            } ?: Prefs.detectedLanHost(this@MainActivity)?.let {
-                appendLine("Source: auto-detected${Prefs.detectedInterface(this@MainActivity)?.let { " ($it)" } ?: ""}")
-            } ?: appendLine("Source: could not detect — check Wi‑Fi/Ethernet")
-            if (BuildConfig.WUPLAY_MODE) {
-                val pub = Prefs.publicHost(this@MainActivity)
-                if (pub != null) {
-                    appendLine("Public (WuPlay): $pub:$port")
-                } else {
-                    appendLine("Public (WuPlay): not set — tap Set public IP")
-                }
-            }
-            lastVerifyMessage?.let { appendLine(it) }
-            appendLine()
-            append(AddonConfig.summaryLine(this@MainActivity))
-        }
-
-        val usb = Prefs.usbLabel(this)
-        val cache = Prefs.cacheDirPath(this)
-        usbText.text = buildString {
-            if (cache != null) {
-                if (StorageMode.isInternal(this@MainActivity)) {
-                    appendLine("Storage: INTERNAL (fallback)")
-                    appendLine(StorageMode.LIMITATIONS)
-                } else {
-                    appendLine("Storage: USB — ${usb ?: "?"}")
-                    Prefs.usbRootPath(this@MainActivity)?.let { appendLine("USB root: $it") }
-                }
-                appendLine("Movies save to:")
-                appendLine(cache)
-                appendLine("Config: prefs + ${AddonConfig.CONFIG_FILE_NAME} next to movies")
-                appendLine("Space: ${DiskQuota.summary(this@MainActivity)}")
-                if (!File(cache).isDirectory) {
-                    appendLine("This folder no longer exists — tap Choose storage")
-                }
-                appendLine()
-                appendLine("Download:")
-                append(DownloadEngine.statusLine())
-            } else {
-                append("Storage: not selected — tap Choose storage (USB or internal)")
-            }
-        }
-    }
-
-    private fun promptEditConfigOnTv() {
-        val current = AddonConfig.load(this)
+        removeUnusedAddonConfig()
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 0)
+            val pad = (32 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
         }
-
-        fun field(hint: String, value: String, multi: Boolean = false): EditText {
-            val edit = EditText(this).apply {
-                this.hint = hint
-                setText(value)
-                if (multi) {
-                    minLines = 2
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                } else {
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-                }
-            }
-            layout.addView(edit)
-            return edit
-        }
-
-        val torrentio = field(
-            "Torrentio — one URL per line (optional; prefer phone)",
-            current.torrentioManifestUrls.joinToString("\n"),
-            multi = true,
-        )
-        val comet = field(
-            "Comet ElfHosted — one URL per line (optional; prefer phone)",
-            current.cometManifestUrls.joinToString("\n"),
-            multi = true,
-        )
-        val localComet = field(
-            "Comet Local — one URL per line (optional; prefer phone)",
-            current.localCometManifestUrls.joinToString("\n"),
-            multi = true,
-        )
-        val debrid = field(
-            "Debrid services (comma-separated)",
-            current.debridServices.joinToString(", "),
-            multi = true,
-        )
-        val quality = field(
-            "streamQuality: 1080p or 4k_sound",
-            current.streamQuality,
-        )
-        val resultMode = field(
-            "resultMode: fastest (default), fast, or complete",
-            current.resultMode,
-        )
-        val cacheGb = field("cacheMaxGb", current.cacheMaxGb.toString()).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
-
-        fun lines(edit: EditText): List<String> =
-            edit.text.toString().split('\n', '\r')
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-
-        AlertDialog.Builder(this)
-            .setTitle("Edit config on TV")
-            .setMessage(
-                "To add multiple Torrentio/Comet manifests (needed when each link only has one debrid), " +
-                    "use the authenticated loopback Settings URL (${Prefs.settingsUrl(this)}) via an ADB tunnel. " +
-                    "On TV you can still paste one URL per line below if you must.",
-            )
-            .setView(layout)
-            .setPositiveButton("Save") { _, _ ->
-                val snapshot = AddonConfig.Snapshot(
-                    torrentioManifestUrls = lines(torrentio),
-                    cometManifestUrls = lines(comet),
-                    localCometManifestUrls = lines(localComet),
-                    debridServices = debrid.text.toString().split(',')
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() },
-                    streamQuality = quality.text.toString().trim(),
-                    cacheMaxGb = cacheGb.text.toString().toIntOrNull() ?: Prefs.DEFAULT_CACHE_MAX_GB,
-                    resultMode = resultMode.text.toString().trim(),
-                )
-                statusText.text = AddonConfig.save(this, snapshot, writeUsb = true)
-                refreshUi()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        setContentView(ScrollView(this).apply { addView(layout) })
+        layout.addView(TextView(this).apply { text = "Descargas USB"; textSize = 28f })
+        info = TextView(this).apply { textSize = 18f; setPadding(0, 24, 0, 24) }
+        layout.addView(info)
+        layout.addView(button("Ver descargas / progreso") {
+            startActivity(Intent(this, ExternalDownloadActivity::class.java))
+        }.apply { requestFocus() })
+        layout.addView(button("Elegir USB → Movies") { chooseUsb() })
+        layout.addView(button("Autorizar acceso a archivos") { requestFilesAccess() })
+        layout.addView(TextView(this).apply {
+            text = "Selecciona Torrentio RD en Stremio y envía el enlace al reproductor externo Descargar al USB.\n\n" +
+                "Movies está en la raíz del USB, fuera de Android/data. Los archivos sobreviven a la desinstalación.\n" +
+                "No hay servidor que arrancar. No se borran películas automáticamente al llenarse el USB."
+            textSize = 17f
+        })
     }
 
-    private fun promptCancelDownload() {
-        if (!DownloadEngine.isBusy()) {
-            statusText.text = "Nothing is downloading right now"
-            refreshUi()
+    override fun onResume() { super.onResume(); refresh() }
+
+    private fun refresh() {
+        if (selectionBusy) return
+        val path = Prefs.cacheDirPath(this)
+        val permission = hasFilesAccess()
+        info.text = "Destino: ${path ?: "sin seleccionar"}\n" +
+            "Acceso a archivos: ${if (permission) "autorizado" else "pendiente"}\n" +
+            if (path != null && !path.endsWith("/Movies")) "Pulsa Elegir USB para trasladar la biblioteca anterior a Movies." else "Carpeta persistente: Movies."
+    }
+
+    private fun hasFilesAccess() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+
+    private fun requestFilesAccess() {
+        if (hasFilesAccess()) { refresh(); return }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            info.text = "Este gestor está preparado para Android 11 o posterior."
             return
         }
-
-        AlertDialog.Builder(this)
-            .setTitle("Cancel this download?")
-            .setMessage(DownloadEngine.statusLine() + "\n\nStopping frees the slot so you can play a different stream.")
-            .setPositiveButton("Cancel and delete") { _, _ ->
-                statusText.text = DownloadEngine.cancelActive(deletePartial = true)
-                refreshUi()
-            }
-            .setNeutralButton("Stop but keep file") { _, _ ->
-                statusText.text = DownloadEngine.cancelActive(deletePartial = false)
-                refreshUi()
-            }
-            .setNegativeButton("Keep downloading", null)
-            .show()
-    }
-
-    private fun promptDeleteCache() {
-        val usage = DiskQuota.usage(this)
-        if (usage.files == 0) {
-            statusText.text = "Cache is already empty"
-            refreshUi()
-            return
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")))
+        } catch (_: Exception) {
+            info.text = "La TV no ofrece esta pantalla. Autoriza el acceso especial a archivos desde Ajustes o ADB."
         }
-
-        val gb = usage.bytes / 1_073_741_824.0
-        AlertDialog.Builder(this)
-            .setTitle("Delete every cached movie?")
-            .setMessage(
-                "%d file%s using %.1f GB will be removed from cache storage. This cannot be undone."
-                    .format(usage.files, if (usage.files == 1) "" else "s", gb),
-            )
-            .setPositiveButton("Delete everything") { _, _ ->
-                DownloadEngine.cancelActive(deletePartial = true)
-                val wiped = DiskQuota.deleteAll(this)
-                statusText.text = if (wiped.failed > 0) {
-                    "Deleted ${wiped.deleted}, but ${wiped.failed} could not be removed"
-                } else {
-                    "Deleted %d file%s, freed %.1f GB".format(
-                        wiped.deleted,
-                        if (wiped.deleted == 1) "" else "s",
-                        wiped.freedBytes / 1_073_741_824.0,
-                    )
-                }
-                refreshUi()
-            }
-            .setNegativeButton("Keep them", null)
-            .show()
     }
 
-    private fun showIpPicker(addresses: List<LanAddress>) {
-        val labels = addresses.map {
-            "${it.address} — ${it.type}${if (it.interfaceName.isNotBlank()) " (${it.interfaceName})" else ""}"
-        }.toTypedArray()
-
-        AlertDialog.Builder(this)
-            .setTitle("Choose LAN IP for phone/PC")
-            .setMessage("Pick the 192.168.x.x address of this TV (for /settings and /health):")
-            .setItems(labels) { _, which ->
-                Prefs.setManualLanHost(this, addresses[which].address)
-                statusText.text = "Using LAN IP ${addresses[which].address}"
-                refreshUi()
-            }
-            .setNegativeButton("Use auto") { _, _ ->
-                Prefs.setManualLanHost(this, null)
-                refreshUi()
-            }
-            .show()
-    }
-
-    private fun detectPublicIpQuiet() {
+    private fun chooseUsb() {
+        if (selectionBusy) return
+        if (DownloadEngine.isBusy()) { info.text = "Pausa la descarga antes de cambiar de carpeta."; return }
+        if (!hasFilesAccess()) { requestFilesAccess(); return }
         scope.launch {
-            val ip = withContext(Dispatchers.IO) { PublicIpDetector.detect() }
-            if (ip != null && Prefs.publicHost(this@MainActivity) == null) {
-                Prefs.setPublicHost(this@MainActivity, ip)
-                refreshUi()
-            }
-        }
-    }
-
-    private fun promptPublicIp() {
-        val port = Prefs.serverPort(this)
-        val lan = Prefs.lanHost(this)
-        val input = EditText(this).apply {
-            hint = "e.g. 85.123.45.67"
-            setText(Prefs.publicHost(this@MainActivity).orEmpty())
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Public IP for WuPlay")
-            .setMessage(
-                "config.wuplay.app is on the internet — it cannot Preview a 192.168.x.x URL.\n\n" +
-                    "Forward TCP $port on your router to this TV ($lan), then use your public IP here.\n\n" +
-                    "Test on phone with Wi‑Fi OFF:\nhttp://PUBLIC_IP:$port/health",
-            )
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                Prefs.setPublicHost(this, input.text.toString())
-                statusText.text = "WuPlay URL: ${Prefs.wuplayInstallUrl(this)}"
-                refreshUi()
-            }
-            .setNeutralButton("Detect") { _, _ ->
-                statusText.text = "Detecting public IP…"
-                scope.launch {
-                    val ip = withContext(Dispatchers.IO) { PublicIpDetector.detect() }
-                    if (ip == null) {
-                        statusText.text = "Could not detect public IP — type it from whatismyip.com"
-                        Toast.makeText(this@MainActivity, "Detect failed", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Prefs.setPublicHost(this@MainActivity, ip)
-                        statusText.text = "Public IP: $ip"
-                        refreshUi()
+            val drives = withContext(Dispatchers.IO) { UsbDriveDetector.scan(this@MainActivity) }
+            if (drives.isEmpty()) { info.text = "No se ha encontrado un USB conectado."; return@launch }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("USB → Movies (conserva los archivos)")
+                .setItems(drives.map { "${it.label} · ${it.path}/Movies" }.toTypedArray()) { _, index ->
+                    selectionBusy = true
+                    info.text = "Comprobando Movies y trasladando archivos propios…"
+                    scope.launch {
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                StorageMode.selectUsb(this@MainActivity, drives[index].path)
+                            }
+                            info.text = result.message
+                        } catch (_: Exception) { info.text = "No se pudo seleccionar Movies. Los archivos se conservan." }
+                        finally { selectionBusy = false }
                     }
                 }
-            }
-            .setNegativeButton("Clear") { _, _ ->
-                Prefs.setPublicHost(this, null)
-                statusText.text = "Public IP cleared — WuPlay will use LAN (Preview may fail)"
-                refreshUi()
-            }
-            .show()
-    }
-
-    private fun promptUsbSelection(force: Boolean) {
-        val drives = UsbDriveDetector.scan(this)
-
-        when {
-            drives.isEmpty() -> {
-                statusText.text = "No USB drive detected"
-                if (force || Prefs.cacheDirPath(this) == null) {
-                    AlertDialog.Builder(this)
-                        .setTitle("Choose storage")
-                        .setMessage(
-                            "No USB found.\n\n" +
-                                "USB is recommended. Internal storage is a fallback.\n\n" +
-                                StorageMode.LIMITATIONS,
-                        )
-                        .setPositiveButton("Use internal storage") { _, _ -> tryEnableInternal() }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                }
-            }
-
-            drives.size == 1 -> confirmSingleDrive(drives.first())
-            else -> showDrivePicker(drives)
+                .setNegativeButton("Cancelar", null).show()
         }
     }
 
-    private fun tryEnableInternal() {
-        val result = StorageMode.enableInternal(this)
-        statusText.text = result.message
-        AlertDialog.Builder(this)
-            .setTitle(if (result.ok) "Internal storage" else "Cannot use internal storage")
-            .setMessage(result.message)
-            .setPositiveButton("OK", null)
-            .show()
-        refreshUi()
+    private fun removeUnusedAddonConfig() {
+        // Delete only duplicated addon credentials; never clear resume_secrets or storage selection.
+        Prefs.setTorrentioManifestUrls(this, emptyList())
+        Prefs.setCometManifestUrls(this, emptyList())
+        Prefs.setLocalCometManifestUrls(this, emptyList())
+        Prefs.setAutoNextEpisode(this, false)
+        Prefs.setAllowTorrents(this, false)
+        Prefs.setDebugLog(this, false)
+        getSharedPreferences(BuildConfig.PREFS_FILE, MODE_PRIVATE).edit().remove("admin_token").apply()
+        File(filesDir, "local-cache-config.json").delete()
     }
 
-    private fun confirmSingleDrive(drive: UsbVolume) {
-        val cacheDir = UsbDriveDetector.resolveWritableCacheDir(this, drive.path)
-        val fs = UsbDriveDetector.mountInfo(drive.path)?.fsType ?: "unknown"
-        AlertDialog.Builder(this)
-            .setTitle("Use this USB drive?")
-            .setMessage(
-                "${drive.label}\n${drive.path}\nFilesystem: $fs\n\n" +
-                    "Movies → ${cacheDir.absolutePath}\n" +
-                    "Config → ${AddonConfig.CONFIG_FILE_NAME} on the USB " +
-                    "(USB root if your PC can write it; otherwise next to the movies folder)\n\n" +
-                    "Or use internal storage (fallback — lower quality, TV may struggle).",
-            )
-            .setPositiveButton("Yes — USB") { _, _ -> applyUsbChoice(drive) }
-            .setNeutralButton("Use internal") { _, _ -> tryEnableInternal() }
-            .setNegativeButton("Not now", null)
-            .show()
+    private fun button(label: String, action: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false; setOnClickListener { action() }
     }
-
-    private fun showDrivePicker(drives: List<UsbVolume>) {
-        val labels = drives.map { drive ->
-            val fs = UsbDriveDetector.mountInfo(drive.path)?.fsType ?: "?"
-            "${drive.label} ($fs)\n${drive.path}"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Choose USB drive")
-            .setItems(labels) { _, which -> applyUsbChoice(drives[which]) }
-            .setNeutralButton("Use internal") { _, _ -> tryEnableInternal() }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun applyUsbChoice(drive: UsbVolume) {
-        val cacheDir = UsbDriveDetector.resolveWritableCacheDir(this, drive.path)
-        val check = UsbDriveDetector.checkCacheDir(cacheDir)
-
-        if (!check.writable) {
-            val explanation = if (check.readOnlyMount) {
-                "The drive is mounted read-only. Eject safely from a computer, then replug."
-            } else {
-                "Android refused the write.\n\n${check.rawError}"
-            }
-            AlertDialog.Builder(this)
-                .setTitle("Cannot write to USB")
-                .setMessage("${cacheDir.absolutePath}\n\nFormat: ${check.fsType ?: "unknown"}\n\n$explanation")
-                .setPositiveButton("OK", null)
-                .show()
-            return
-        }
-
-        if (check.fileSizeTooSmall) {
-            val fsLabel = check.fsType?.uppercase() ?: "FAT32"
-            AlertDialog.Builder(this)
-                .setTitle("Format this drive as exFAT")
-                .setMessage(
-                    "This USB is $fsLabel (max ~${check.maxFileGb?.toInt() ?: 4} GB per file). " +
-                        "Movie files are usually larger, so caching will fail.\n\n" +
-                        "Do this on a computer (the TV app cannot format the drive safely):\n" +
-                        "1. Plug the drive into a PC\n" +
-                        "2. Back up anything you need\n" +
-                        "3. Format as exFAT\n" +
-                        "4. Plug it back into the TV and Choose storage again",
-                )
-                .setPositiveButton("OK", null)
-                .setNeutralButton("Use anyway") { _, _ -> saveUsbChoice(drive) }
-                .show()
-            return
-        }
-
-        saveUsbChoice(drive)
-    }
-
-    private fun saveUsbChoice(drive: UsbVolume) {
-        val result = StorageMode.selectUsb(this, drive.path)
-        statusText.text = result.message
-        if (!result.ok) {
-            AlertDialog.Builder(this)
-                .setTitle("USB setup failed")
-                .setMessage(result.message)
-                .setPositiveButton("OK", null)
-                .show()
-        }
-        refreshUi()
-    }
-
-    companion object {
-        private const val TAG = "MainActivity"
-    }
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
 }

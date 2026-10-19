@@ -3,16 +3,20 @@
 Fork de [heroiamarelo1/Local-Cache](https://github.com/heroiamarelo1/Local-Cache), conservando licencia MIT y autoría.
 Ver **[docs/HARDENING.md](docs/HARDENING.md)** para revisión, alcance y limitaciones.
 
-**Nuevo: [descarga desde el selector de reproductores externos](docs/EXTERNAL-DOWNLOAD.md).**
+**Actual: [Movies persistente y gestor sin servidor](docs/PERSISTENT-MOVIES.md), v0.5.9-d4n.3.**
+Los vídeos se guardan en `Movies` de la raíz del USB, fuera de la carpeta borrable de la app.
+Requiere acceso especial a archivos en esta TV; no elimina películas automáticamente.
+
+**[Descarga desde el selector de reproductores externos](docs/EXTERNAL-DOWNLOAD.md).**
 Selecciona una fuente de Torrentio RD y envíala a «Descargar al USB», sin elegir otro
 listado de fuentes. La app pide confirmación y muestra progreso; no reproduce el vídeo.
 
-**Prototipo instalado para pruebas en la Xiaomi; reproducción real pendiente.** La prueba USB
-con corte y reanudación ha pasado; véase el informe. Este fork escucha **solo en `127.0.0.1`**,
-no en LAN/WAN. No incluir URLs configuradas ni credenciales en issues o commits.
+**Prototipo instalado para pruebas en la Xiaomi.** La prueba USB con corte y reanudación ha
+pasado; véanse los informes. La variante actual no arranca el servidor ni requiere el addon
+Local Cache en Stremio. No incluir enlaces recibidos ni credenciales en issues o commits.
 
-- Identidad separada: `app.localcache.d4n1984`, addon `org.localcache.d4n1984`.
-- Ajustes con token local, URLs sensibles fuera del USB, backup desactivado.
+- Identidad separada: `app.localcache.d4n1984`, mostrada como «Descargas USB».
+- Sin servidor; enlaces de reanudación privados fuera del USB y backup desactivado.
 - Reintentos HTTP con validación de rangos/tamaño y conservación del parcial.
 - ABI predeterminada `armeabi-v7a`, la de la Xiaomi examinada.
 - No promete importar/reanudar parciales de Unchained: no comparten identidad/metadata.
@@ -29,7 +33,10 @@ Java y SDK permanecen en el contenedor, con emulación amd64 en Apple Silicon.
 El APK release es **sin firmar**; no se publica ni instala automáticamente.
 Para otras ABI: `-Plocalcache.abis=armeabi-v7a,arm64-v8a`.
 
-Para configurar desde el Mac, iniciar el servidor en la TV y crear un túnel:
+### Configuración del antiguo modo addon (v0.5.9-d4n.1/.2; no se usa en .3)
+
+Lo siguiente se conserva como referencia histórica; la interfaz actual no inicia ese servidor.
+En las versiones antiguas, para configurar desde el Mac se creaba un túnel:
 
 ```sh
 rtk proxy adb -s <IP-TV>:5555 forward tcp:7100 tcp:7100

@@ -465,6 +465,9 @@ object DownloadEngine {
             entry.bytesPerSec = 0
             entry.lastError = null
             LocalLibrary.writeMeta(entry)
+            appContext?.let { ctx ->
+                android.media.MediaScannerConnection.scanFile(ctx, arrayOf(target.final.absolutePath), null, null)
+            }
         } catch (error: Exception) {
             entry.bytesPerSec = 0
             entry.downloadedBytes = target.part.takeIf { it.exists() }?.length() ?: 0L

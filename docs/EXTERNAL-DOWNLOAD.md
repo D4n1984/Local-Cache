@@ -1,19 +1,21 @@
 # Descargar directamente desde una fuente de Stremio
 
-Prototipo `0.5.9-d4n.2`, Android 11 / ARM 32 bits. El receptor se instala con el mismo
-paquete del fork, sin una segunda app, sin permisos generales de almacenamiento y sin
-modificar Torrentio. Conserva la selección USB y los parciales anteriores.
+Flujo introducido en `0.5.9-d4n.2`, Android 11 / ARM 32 bits. El receptor se instala con el
+mismo paquete del fork, sin una segunda app y sin modificar Torrentio. **Desde .3**, la app
+se llama «Descargas USB», usa Movies persistente con acceso especial a archivos y ya no
+arranca servidor. Véase [PERSISTENT-MOVIES.md](PERSISTENT-MOVIES.md). Los resultados de .2
+que figuran más abajo son históricos, no describen sus permisos o almacenamiento actuales.
 
 ## Uso
 
 1. En Stremio, selecciona la fuente **Torrentio RD** que te interese.
-2. Usa la opción de reproductor externo y selecciona **Local Cache · Descargar al USB**
+2. Usa la opción de reproductor externo y selecciona **Descargas USB · Descargar al USB**
    en el perfil **PERSONAL**, con **Solo una vez**.
 3. Comprueba el título y confirma **Descargar al USB** en nuestra pantalla.
 4. Se muestra porcentaje, bytes descargados/total, velocidad y estado, actualizados cada
    segundo. No se reproduce el archivo. Si hay otra descarga, queda en cola.
 5. Puedes volver a Stremio o Home: el servicio mantiene la descarga. Para volver a ver el
-   progreso, abre **Local Cache → Descargas USB / progreso**; la notificación también abre
+   progreso, abre **Descargas USB → Ver descargas / progreso**; la notificación también abre
    esta pantalla cuando el sistema la muestra.
 6. **Pausar (conservar parcial)** no elimina lo descargado; **Iniciar / reanudar** utiliza el
    parcial y los validadores privados. El servidor debe admitir rangos y el enlace seguir válido.
@@ -24,8 +26,8 @@ destino o un reproductor externo instalado. Cambiar este predeterminado afecta a
 reproducciones: no equivale a añadir un botón nativo «Descargar» junto a Exo dentro de Stremio.
 No elegir «Siempre» en el selector Android si se quiere conservar la elección de aplicaciones.
 
-El addon Local Cache no es necesario para esta ruta. El servidor de la app se mantiene por
-compatibilidad con el servicio existente, pero la descarga externa no consulta sus manifests.
+El addon Local Cache no es necesario para esta ruta. En .2 el servicio aún arrancaba un
+servidor por compatibilidad; desde .3 no lo hace. La descarga no consulta sus manifests.
 El receptor no necesita otra copia de la clave RD: recibe el enlace resuelto que entrega Stremio.
 
 ## Seguridad y límites
@@ -42,12 +44,12 @@ El receptor no necesita otra copia de la clave RD: recibe el enlace resuelto que
   identidad; no se mezclan por nombre dos archivos que no se han verificado como iguales.
 - No admite HLS/DASH, DRM ni torrents P2P a través de este receptor. No reenvía cabeceras
   especiales que un reproductor externo pudiera recibir; se valida la ruta RD HTTP normal.
-- El contenido se conserva en el directorio específico de la app dentro del USB; desinstalar
-  la app puede eliminarlo. La pantalla es un gestor de descarga, no un nuevo reproductor.
+- Desde .3, los vídeos se conservan en Movies compartido al desinstalar la app. La selección
+  del USB y los enlaces de reanudación sí se pierden. La pantalla no es un reproductor.
 - Al detener el proceso o actualizar el APK, se conserva el parcial pero hay que reanudar;
   no se afirma recuperación automática tras un reinicio completo de Android.
 
-## Validación
+## Validación inicial (.2)
 
 - Compilación ARM y 20 pruebas unitarias correctas; Android Lint sin errores (78 advertencias).
   Validación global: 0 hallazgos. APK de prueba firmado: 8.964.951 bytes,

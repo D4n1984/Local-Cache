@@ -13,10 +13,8 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import app.localcache.server.ServerManager
 import app.localcache.storage.DownloadEngine
 import app.localcache.storage.CacheRegistry
-import app.localcache.torrent.TorrentEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,13 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Keeps the process alive while the user is over in Stremio watching.
- *
- * Without this the HTTP server and the USB download both live only in the activity's
- * process, which Android TV freezes as soon as the app leaves the screen — so downloads
- * never finished and nothing was ever written to the drive.
- */
+/** Foreground HTTP download worker only: no server and no sticky idle process. */
 class CacheForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -67,28 +59,21 @@ class CacheForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        // The activity normally starts the server first; this covers a restart by Android.
-        if (!ServerManager.isRunning()) {
-            try {
-                ServerManager.start(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "server start failed", e)
-            }
-        }
-
         startNotificationUpdates()
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun startNotificationUpdates() {
         notifyJob?.cancel()
         notifyJob = scope.launch {
             val manager = getSystemService(NotificationManager::class.java)
+            var idleTicks = 0
             while (true) {
+                idleTicks = if (DownloadEngine.isBusy()) 0 else idleTicks + 1
+                if (idleTicks >= 3) { stopSelf(); break }
                 if (DownloadEngine.isBusy()) acquireWakeLock()
                 else if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
-                val port = ServerManager.activePort() ?: Prefs.serverPort(this@CacheForegroundService)
-                val text = "${DownloadEngine.statusLine()} · port $port"
+                val text = DownloadEngine.statusLine()
                 runCatching { manager.notify(NOTIFICATION_ID, buildNotification(text)) }
                 delay(5_000)
             }
@@ -102,7 +87,7 @@ class CacheForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Local Cache running")
+            .setContentTitle("Descargas USB")
             .setContentText(text)
             .setContentIntent(open)
             .setProgress(if (active == null) 0 else 100,
@@ -128,10 +113,6 @@ class CacheForegroundService : Service() {
         scope.cancel()
         runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
         wakeLock = null
-        ServerManager.stop()
-        // The libtorrent session outlives coroutines on its own threads; without this it keeps
-        // the swarm connections (and the radio) alive after the service is gone.
-        runCatching { TorrentEngine.shutdown() }
         super.onDestroy()
     }
 
