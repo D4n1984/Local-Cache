@@ -108,6 +108,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnStop).setOnClickListener {
             stopLocalServer()
         }
+        findViewById<Button>(R.id.btnDownloads).setOnClickListener {
+            startActivity(android.content.Intent(this, ExternalDownloadActivity::class.java))
+        }
 
         refreshLanIp(showDialogIfMultiple = false)
         refreshUi()

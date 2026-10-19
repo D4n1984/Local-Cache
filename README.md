@@ -3,6 +3,10 @@
 Fork de [heroiamarelo1/Local-Cache](https://github.com/heroiamarelo1/Local-Cache), conservando licencia MIT y autoría.
 Ver **[docs/HARDENING.md](docs/HARDENING.md)** para revisión, alcance y limitaciones.
 
+**Nuevo: [descarga desde el selector de reproductores externos](docs/EXTERNAL-DOWNLOAD.md).**
+Selecciona una fuente de Torrentio RD y envíala a «Descargar al USB», sin elegir otro
+listado de fuentes. La app pide confirmación y muestra progreso; no reproduce el vídeo.
+
 **Prototipo instalado para pruebas en la Xiaomi; reproducción real pendiente.** La prueba USB
 con corte y reanudación ha pasado; véase el informe. Este fork escucha **solo en `127.0.0.1`**,
 no en LAN/WAN. No incluir URLs configuradas ni credenciales en issues o commits.

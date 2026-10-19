@@ -2,6 +2,7 @@ package app.localcache
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -14,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.localcache.server.ServerManager
 import app.localcache.storage.DownloadEngine
+import app.localcache.storage.CacheRegistry
 import app.localcache.torrent.TorrentEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,14 +95,24 @@ class CacheForegroundService : Service() {
         }
     }
 
-    private fun buildNotification(text: String) =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(text: String): android.app.Notification {
+        val active = DownloadEngine.activeKey()?.let { CacheRegistry.get(it) }
+        val open = PendingIntent.getActivity(
+            this, 10, Intent(this, ExternalDownloadActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Local Cache running")
             .setContentText(text)
+            .setContentIntent(open)
+            .setProgress(if (active == null) 0 else 100,
+                active?.let { CacheRegistry.progress(it.cacheKey) } ?: 0,
+                active != null && active.totalBytes <= 0)
             .setSmallIcon(R.drawable.ic_logo)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
+    }
 
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return

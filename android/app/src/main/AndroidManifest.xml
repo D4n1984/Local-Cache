@@ -40,6 +40,26 @@
             </intent-filter>
         </activity>
 
+        <!-- Receives untrusted video URLs. Validates input and requires visible confirmation;
+             no background action is accepted through Intent extras.
+             nosemgrep: java.android.security.exported_activity.exported_activity -->
+        <activity
+            android:name=".ExternalDownloadActivity"
+            android:label="Descargar al USB"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".CacheForegroundService"
             android:exported="false"

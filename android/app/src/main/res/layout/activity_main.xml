@@ -52,6 +52,12 @@
                 android:orientation="vertical">
 
                 <Button
+                    android:id="@+id/btnDownloads"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Descargas USB / progreso" />
+
+                <Button
                     android:id="@+id/btnStart"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
