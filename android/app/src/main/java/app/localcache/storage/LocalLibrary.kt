@@ -39,9 +39,9 @@ object LocalLibrary {
     fun writeMeta(entry: CacheEntry) {
         val path = entry.filePath ?: return
         val meta = metaFile(File(path))
+        ResumeStore.saveUrl(entry.cacheKey, entry.url)
         val json = JSONObject()
             .put("cacheKey", entry.cacheKey)
-            .put("url", entry.url)
             .put("rawName", entry.label)
             .put("type", entry.type ?: "movie")
             .put("id", entry.id ?: "")
@@ -56,6 +56,8 @@ object LocalLibrary {
     }
 
     fun deleteMeta(finalFile: File) {
+        runCatching { JSONObject(metaFile(finalFile).readText()).optString("cacheKey") }
+            .getOrNull()?.takeIf { it.isNotBlank() }?.let { ResumeStore.delete(it) }
         runCatching { metaFile(finalFile).delete() }
     }
 
@@ -76,7 +78,7 @@ object LocalLibrary {
 
             Item(
                 cacheKey = meta.optString("cacheKey"),
-                url = meta.optString("url"),
+                url = ResumeStore.url(meta.optString("cacheKey")),
                 rawName = meta.optString("rawName").ifBlank { finalFile.nameWithoutExtension },
                 type = meta.optString("type").ifBlank { "movie" },
                 id = id,

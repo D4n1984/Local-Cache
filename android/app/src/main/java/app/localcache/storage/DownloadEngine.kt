@@ -12,9 +12,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -24,16 +22,11 @@ object DownloadEngine {
     /** Anything smaller than this is an error page, not a movie. */
     private const val MIN_VALID_BYTES = 1024 * 1024L
 
-    private const val WRITE_BUFFER_BYTES = 4 * 1024 * 1024
-
-    /** Get something on disk fast so playback can begin, before favouring big writes. */
-    private const val FIRST_FLUSH_BYTES = 512 * 1024L
-
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
-        .followSslRedirects(true)
+        .followSslRedirects(false)
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.HOURS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     // One download at a time: debrid links throttle parallel connections, and the drive
@@ -351,7 +344,7 @@ object DownloadEngine {
         run.stop()
         // A torrent does not notice the flag until its next poll, and the caller may be about
         // to delete the file underneath it.
-        TorrentEngine.abort(run.cacheKey)
+        if (CacheRegistry.get(run.cacheKey)?.isTorrent == true) TorrentEngine.abort(run.cacheKey)
 
         CacheRegistry.get(run.cacheKey)?.let { entry ->
             if (entry.status == "downloading" || entry.status == "queued") {
@@ -440,132 +433,46 @@ object DownloadEngine {
     }
 
     private fun download(entry: CacheEntry, target: Target, budgetBytes: Long, run: Run) {
-        val partFile = target.part
-        var downloaded = if (partFile.exists()) partFile.length() else 0L
-        entry.downloadedBytes = downloaded
-
         try {
-            val builder = Request.Builder()
-                .url(entry.url)
-                .header("User-Agent", "LocalCache/0.4.17")
-            if (downloaded > 0) {
-                builder.header("Range", "bytes=$downloaded-")
-                Log.i(TAG, "resume ${entry.cacheKey} from $downloaded")
-            }
-
-            val call = client.newCall(builder.build())
-            run.call = call
+            var sampleAt = System.nanoTime()
+            var sampleBytes = target.part.takeIf { it.exists() }?.length() ?: 0L
+            HttpTransfer(client).download(
+                url = entry.url,
+                part = target.part,
+                budget = budgetBytes,
+                expectedTotal = entry.totalBytes,
+                initialValidator = ResumeStore.validator(entry.cacheKey),
+                cancelled = { run.cancelled },
+                onCall = { run.call = it },
+                onValidator = { ResumeStore.saveValidator(entry.cacheKey, it) },
+                onProgress = { done, total ->
+                    entry.downloadedBytes = done
+                    entry.totalBytes = total
+                    val now = System.nanoTime()
+                    if (now - sampleAt >= 2_000_000_000L) {
+                        entry.bytesPerSec = ((done - sampleBytes).coerceAtLeast(0) * 1_000_000_000.0 / (now - sampleAt)).toLong()
+                        sampleAt = now
+                        sampleBytes = done
+                    }
+                },
+            )
             if (run.cancelled) return
-
-            call.execute().use { response ->
-                if (!response.isSuccessful && response.code != 206) {
-                    throw IllegalStateException("Upstream HTTP ${response.code}")
-                }
-
-                val contentType = response.header("Content-Type")?.lowercase() ?: ""
-                if (contentType.contains("json") ||
-                    contentType.contains("javascript") ||
-                    contentType.contains("html")
-                ) {
-                    throw IllegalStateException("Upstream sent $contentType, not a video")
-                }
-
-                // Server ignored our Range header - start over rather than corrupt the file.
-                if (downloaded > 0 && response.code == 200) {
-                    Log.w(TAG, "range ignored, restarting ${entry.cacheKey}")
-                    downloaded = 0
-                    entry.downloadedBytes = 0
-                }
-
-                val body = response.body ?: throw IllegalStateException("Empty response body")
-                val contentLength = body.contentLength()
-                entry.totalBytes = when (response.code) {
-                    206 -> {
-                        val range = response.header("Content-Range")
-                        Regex("/(\\d+)$").find(range ?: "")?.groupValues?.get(1)?.toLongOrNull()
-                            ?: (downloaded + contentLength)
-                    }
-                    else -> contentLength.coerceAtLeast(entry.totalBytes)
-                }
-
-                val raw = FileOutputStream(partFile, downloaded > 0)
-                // Large coalesced writes: the player is reading the same file off the same
-                // flash drive, and lots of small writes make the head-thrashing much worse.
-                java.io.BufferedOutputStream(raw, WRITE_BUFFER_BYTES).use { out ->
-                    body.byteStream().use { input ->
-                        val buffer = ByteArray(512 * 1024)
-                        var sampleAt = System.currentTimeMillis()
-                        var sampleBytes = downloaded
-                        val startedAt = downloaded
-                        var openedPlayback = false
-
-                        while (true) {
-                            if (run.cancelled) throw Cancelled()
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            out.write(buffer, 0, read)
-                            downloaded += read
-                            entry.downloadedBytes = downloaded
-
-                            // The player cannot start until bytes are visible on disk, and a
-                            // 4 MB buffer can hold them back for seconds on a slow link.
-                            // Publish the first chunk straight away, then resume coalescing.
-                            if (!openedPlayback && downloaded - startedAt >= FIRST_FLUSH_BYTES) {
-                                out.flush()
-                                openedPlayback = true
-                            }
-
-                            val now = System.currentTimeMillis()
-                            if (now - sampleAt >= 2000) {
-                                entry.bytesPerSec = (downloaded - sampleBytes) * 1000 / (now - sampleAt)
-                                sampleAt = now
-                                sampleBytes = downloaded
-                            }
-
-                            if (downloaded > budgetBytes) {
-                                throw OutOfSpace(
-                                    "Movie is bigger than the ${gb(budgetBytes)} GB of space available",
-                                )
-                            }
-                        }
-                    }
-                    out.flush()
-                    raw.fd.sync()
-                }
-
-                if (downloaded < MIN_VALID_BYTES) {
-                    partFile.delete()
-                    throw IllegalStateException("Only $downloaded bytes received")
-                }
-
-                if (!partFile.renameTo(target.final)) {
-                    throw IllegalStateException("Could not rename .part on cache storage")
-                }
-
-                entry.status = "complete"
-                entry.downloadedBytes = target.final.length()
-                entry.totalBytes = target.final.length()
-                entry.lastError = null
-                Log.i(TAG, "complete ${entry.cacheKey} (${target.final.length()} bytes)")
-            }
-        } catch (e: Exception) {
+            if (target.part.length() < MIN_VALID_BYTES) throw IllegalStateException("Video is too small")
+            if (!target.part.renameTo(target.final)) throw IllegalStateException("Could not promote verified partial")
+            entry.status = "complete"
+            entry.downloadedBytes = target.final.length()
+            entry.totalBytes = target.final.length()
             entry.bytesPerSec = 0
-
-            // A deliberate stop is not a failure — leave the .part alone so the same
-            // movie can pick up where it left off if the viewer comes back to it.
-            if (run.cancelled || e is Cancelled) {
-                Log.i(TAG, "cancelled ${entry.cacheKey} at ${entry.downloadedBytes} bytes")
-                return
-            }
-
-            Log.e(TAG, "failed ${entry.cacheKey}: ${e.message}")
+            entry.lastError = null
+            LocalLibrary.writeMeta(entry)
+        } catch (error: Exception) {
+            entry.bytesPerSec = 0
+            entry.downloadedBytes = target.part.takeIf { it.exists() }?.length() ?: 0L
+            if (run.cancelled || error is HttpTransfer.Cancelled) return
             entry.status = "error"
-            entry.lastError = e.message ?: e.javaClass.simpleName
-            // A file that cannot fit will never finish — reclaim what it took.
-            if (e is OutOfSpace) {
-                partFile.delete()
-                entry.downloadedBytes = 0
-            }
+            entry.lastError = app.localcache.SecretRedactor.redact(error.message ?: error.javaClass.simpleName)
+            Log.e(TAG, "Transfer failed: ${error.javaClass.simpleName}; partial retained")
+            // Never delete a recoverable partial on connection reset, timeout or exhausted retries.
         }
     }
 
@@ -606,10 +513,6 @@ object DownloadEngine {
         Log.e(TAG, "torrent failed ${entry.cacheKey}: ${entry.lastError}")
         DiagLog.e("torrent failed ${entry.cacheKey}: ${entry.lastError}")
     }
-
-    private class OutOfSpace(message: String) : IllegalStateException(message)
-
-    private class Cancelled : IllegalStateException("cancelled")
 
     /** Short line for the ongoing notification and the app screen. */
     fun statusLine(): String {

@@ -493,6 +493,6 @@ object SettingsPage {
 
     private fun html(body: String): Response =
         NanoHTTPD.newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", body).apply {
-            addHeader("Access-Control-Allow-Origin", "*")
+            addHeader("Referrer-Policy", "no-referrer")
         }
 }

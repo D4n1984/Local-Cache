@@ -19,9 +19,11 @@ object PortFinder {
 
     fun isFree(port: Int): Boolean {
         return try {
+            // Probe the loopback-only HTTP port; no application data is exchanged.
+            // nosemgrep: kotlin.lang.security.unencrypted-socket.unencrypted-socket
             ServerSocket().use { socket ->
                 socket.reuseAddress = true
-                socket.bind(InetSocketAddress("0.0.0.0", port))
+                socket.bind(InetSocketAddress("127.0.0.1", port))
                 true
             }
         } catch (_: IOException) {

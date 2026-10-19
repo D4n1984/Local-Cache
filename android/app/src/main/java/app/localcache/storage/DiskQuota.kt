@@ -92,14 +92,13 @@ object DiskQuota {
         // still under the limit, and then no amount of quota headroom helps.
         if (usage > target || free < requiredBytes) {
             val protectedPaths = protectedPaths(keepKeys)
-            val candidates = root.listFiles()
-                ?.filter {
+            val candidates = CacheOwnership.mediaFiles(root)
+                .filter {
                     it.isFile &&
                         it.absolutePath !in protectedPaths &&
                         !it.name.endsWith(".meta.json")
                 }
-                ?.sortedBy { it.lastModified() }
-                ?: emptyList()
+                .sortedBy { it.lastModified() }
 
             for (file in candidates) {
                 if (usage <= target && free >= requiredBytes) break
@@ -131,7 +130,8 @@ object DiskQuota {
     /** Empties the cache folder completely, including partial downloads and sidecars. */
     fun deleteAll(context: Context): Wipe {
         val root = CachePaths.cacheRoot(context) ?: return Wipe(0, 0, 0)
-        val files = root.listFiles() ?: return Wipe(0, 0, 0)
+        val media = CacheOwnership.mediaFiles(root)
+        val files = (media + media.map { File(it.absolutePath.removeSuffix(".part") + ".meta.json") }).distinct()
 
         var deleted = 0
         var freed = 0L

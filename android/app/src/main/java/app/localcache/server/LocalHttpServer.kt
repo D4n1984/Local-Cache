@@ -26,13 +26,15 @@ class LocalHttpServer(
     private val appContext: Context,
     private val lanHost: String,
     port: Int,
-) : NanoHTTPD("0.0.0.0", port) {
+) : NanoHTTPD("127.0.0.1", port) {
 
     private val fetcher = UpstreamFetcher(appContext)
     private var started = false
 
     init {
         setServerSocketFactory {
+            // Local native Stremio uses HTTP; never bind this socket to a LAN interface.
+            // nosemgrep: kotlin.lang.security.unencrypted-socket.unencrypted-socket
             ServerSocket().apply {
                 reuseAddress = true
             }
@@ -64,14 +66,42 @@ class LocalHttpServer(
         return try {
             handle(session)
         } catch (e: Exception) {
-            Log.e(TAG, "request failed: ${session.method} ${session.uri}", e)
-            jsonResponse(Response.Status.INTERNAL_ERROR, """{"error":"${e.message}"}""")
+            Log.e(TAG, "request failed: ${e.javaClass.simpleName}")
+            jsonResponse(Response.Status.INTERNAL_ERROR, """{"error":"Request failed; check the app locally"}""")
         }
     }
 
     private fun handle(session: IHTTPSession): Response {
         val uri = session.uri ?: "/"
         val method = session.method ?: Method.GET
+
+        // Reject DNS rebinding, cross-site forms/fetches, and attacker-chosen Host headers.
+        if (!LocalAccessPolicy.acceptsHost(session.headers["host"], listeningPort) ||
+            !LocalAccessPolicy.acceptsOrigin(session.headers["origin"], listeningPort) ||
+            !LocalAccessPolicy.acceptsReferer(session.headers["referer"], listeningPort)
+        ) return jsonResponse(Response.Status.FORBIDDEN, """{"error":"Local requests only"}""")
+
+        if (LocalAccessPolicy.adminRoute(uri)) {
+            val expected = AdminAccess.token(appContext)
+            val queryToken = session.parameters["admin"]?.firstOrNull()
+            // Bootstrap from the app's token-bearing URL, then remove it from browser history/address.
+            if (method == Method.GET && uri.trimEnd('/') == "/settings" &&
+                LocalAccessPolicy.tokenMatches(expected, queryToken)
+            ) return newFixedLengthResponse(Response.Status.REDIRECT_SEE_OTHER, "text/plain", "").apply {
+                addHeader("Location", "/settings")
+                addHeader("Set-Cookie", "lc_admin=$expected; HttpOnly; SameSite=Strict; Path=/")
+                addHeader("Cache-Control", "no-store")
+                addHeader("Referrer-Policy", "no-referrer")
+            }
+            val candidate = session.headers["x-localcache-token"]
+                ?: LocalAccessPolicy.cookieToken(session.headers["cookie"])
+            if (!LocalAccessPolicy.tokenMatches(expected, candidate)) {
+                return jsonResponse(Response.Status.UNAUTHORIZED, """{"error":"Open Settings from the TV app"}""")
+            }
+        }
+        if (uri == "/cancel" && method != Method.POST) {
+            return jsonResponse(Response.Status.METHOD_NOT_ALLOWED, """{"error":"POST required"}""")
+        }
 
         // Stremio / WebView CORS preflight
         if (method == Method.OPTIONS) {
@@ -108,7 +138,7 @@ class LocalHttpServer(
                                 "Set public IP in the app so config.wuplay.app can Preview. Phone /settings uses LAN."
                             }
                         } else {
-                            "Open this URL from a phone on the same Wi‑Fi. No router changes needed."
+                            "Local-only fork. Configure on TV or through an authenticated ADB-forwarded loopback URL."
                         },
                     )
                 return jsonResponse(Response.Status.OK, body.toString())
@@ -144,7 +174,7 @@ class LocalHttpServer(
                     .put("storageMode", Prefs.storageMode(appContext))
                     .put("quota", org.json.JSONObject(DiskQuota.asJson(appContext)))
                     .put("quotaSummary", DiskQuota.summary(appContext))
-                    .put("config", AddonConfig.toJson(AddonConfig.load(appContext)))
+                    .put("config", org.json.JSONObject().put("configured", AddonConfig.load(appContext).hasAnyUpstream()))
                     .put("entries", org.json.JSONArray(entries.map { org.json.JSONObject(it) }))
                 return jsonResponse(Response.Status.OK, body.toString())
             }
@@ -329,7 +359,10 @@ class LocalHttpServer(
     }
 
     private fun Response.addCorsHeaders() {
-        addHeader("Access-Control-Allow-Origin", "*")
+        // No wildcard CORS: native clients need none; web admin is same-origin.
+        addHeader("X-Content-Type-Options", "nosniff")
+        addHeader("X-Frame-Options", "DENY")
+        addHeader("Referrer-Policy", "no-referrer")
         addHeader("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
         addHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Range")
         addHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")

@@ -243,7 +243,7 @@ object VideoHandler {
         val body = HybridInputStream(entry, start, length, startOnDisk)
         val response = NanoHTTPD.newFixedLengthResponse(status, type, body, length)
         response.addHeader("Accept-Ranges", "bytes")
-        response.addHeader("Access-Control-Allow-Origin", "*")
+        response.addHeader("Referrer-Policy", "no-referrer")
         if (hasRange) {
             val total = if (totalBytes > 0) totalBytes.toString() else "*"
             response.addHeader("Content-Range", "bytes $start-$end/$total")
@@ -269,7 +269,7 @@ object VideoHandler {
             length,
         )
         response.addHeader("Accept-Ranges", "bytes")
-        response.addHeader("Access-Control-Allow-Origin", "*")
+        response.addHeader("Referrer-Policy", "no-referrer")
         if (hasRange) {
             val total = if (totalBytes > 0) totalBytes.toString() else "*"
             response.addHeader("Content-Range", "bytes $start-$end/$total")
@@ -587,7 +587,7 @@ object VideoHandler {
     private fun headResponse(type: String, totalBytes: Long): Response {
         val response = NanoHTTPD.newFixedLengthResponse(Status.OK, type, "")
         response.addHeader("Accept-Ranges", "bytes")
-        response.addHeader("Access-Control-Allow-Origin", "*")
+        response.addHeader("Referrer-Policy", "no-referrer")
         if (totalBytes > 0) {
             response.addHeader("Content-Length", totalBytes.toString())
         }
@@ -649,7 +649,7 @@ object VideoHandler {
             chunkSize,
         )
         response.addHeader("Accept-Ranges", "bytes")
-        response.addHeader("Access-Control-Allow-Origin", "*")
+        response.addHeader("Referrer-Policy", "no-referrer")
         if (hasRange) {
             response.addHeader(
                 "Content-Range",
@@ -663,7 +663,7 @@ object VideoHandler {
 
     private fun json(status: Status, body: String): Response =
         NanoHTTPD.newFixedLengthResponse(status, "application/json", body).apply {
-            addHeader("Access-Control-Allow-Origin", "*")
+            addHeader("Referrer-Policy", "no-referrer")
         }
 
     private data class ParsedRange(val start: Long, val end: Long?)

@@ -26,7 +26,7 @@ object LogsPage {
                 "text/plain; charset=utf-8",
                 body,
             ).apply {
-                addHeader("Access-Control-Allow-Origin", "*")
+                addHeader("Referrer-Policy", "no-referrer")
                 addHeader("Cache-Control", "no-store")
             }
         }
@@ -36,7 +36,7 @@ object LogsPage {
             "text/html; charset=utf-8",
             html(context, body),
         ).apply {
-            addHeader("Access-Control-Allow-Origin", "*")
+            addHeader("Referrer-Policy", "no-referrer")
             addHeader("Cache-Control", "no-store")
         }
     }

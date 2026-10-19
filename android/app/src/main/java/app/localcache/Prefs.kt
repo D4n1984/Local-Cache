@@ -190,10 +190,8 @@ object Prefs {
 
     /** LAN IP for phone/PC configure and health URLs. */
     fun lanHost(context: Context): String {
-        manualLanHost(context)?.let { return it }
-        detectedLanHost(context)?.let { return it }
-        refreshDetectedLanIp(context)?.let { return it.address }
-        return "192.168.1.83"
+        // This fork intentionally does not expose playback or configuration on the LAN/WAN.
+        return "127.0.0.1"
     }
 
     /**
@@ -232,10 +230,10 @@ object Prefs {
     fun clientInstallUrl(context: Context): String = stremioInstallUrl(context)
 
     fun settingsUrl(context: Context): String =
-        "http://${lanHost(context)}:${serverPort(context)}/settings"
+        app.localcache.server.AdminAccess.settingsUrl(context, serverPort(context))
 
     fun healthUrl(context: Context): String =
-        "http://${lanHost(context)}:${serverPort(context)}/health"
+        "http://127.0.0.1:${serverPort(context)}/health"
 
     fun publicHealthUrl(context: Context): String? {
         val host = publicHost(context) ?: return null

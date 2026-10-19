@@ -4,6 +4,8 @@ plugins {
 }
 
 val libtorrent4jVersion = "2.1.0-39"
+val targetAbis = providers.gradleProperty("localcache.abis").orElse("armeabi-v7a").get()
+    .split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
 android {
     namespace = "app.localcache"
@@ -11,21 +13,21 @@ android {
 
     defaultConfig {
         // Different package from the old WuPlay cache (app.localcache) so both can stay installed.
-        applicationId = "app.localcache.release"
+        applicationId = "app.localcache.d4n1984"
         minSdk = 24
         targetSdk = 34
-        versionCode = 80
-        versionName = "0.5.8"
+        versionCode = 81
+        versionName = "0.5.9-d4n.1"
         buildConfigField("boolean", "WUPLAY_MODE", "false")
-        buildConfigField("String", "PREFS_FILE", "\"local_cache_release\"")
+        buildConfigField("String", "PREFS_FILE", "\"local_cache_d4n1984\"")
         buildConfigField("int", "DEFAULT_PORT", "7100")
         buildConfigField("String", "CLIENT_NAME", "\"Stremio\"")
-        buildConfigField("String", "ADDON_ID", "\"org.localcache.release\"")
+        buildConfigField("String", "ADDON_ID", "\"org.localcache.d4n1984\"")
 
         // Android TV boxes are arm only. Skipping x86 keeps the torrent engine
         // from tripling the APK for architectures nobody installs this on.
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            abiFilters += targetAbis
         }
     }
 
@@ -74,6 +76,7 @@ android {
             isMinifyEnabled = false
         }
     }
+    testOptions { unitTests.isReturnDefaultValues = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -109,7 +112,9 @@ dependencies {
 
     // BitTorrent fallback for magnet streams (libtorrent 2.x via JNI).
     implementation("org.libtorrent4j:libtorrent4j:$libtorrent4jVersion")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm64:$libtorrent4jVersion")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent4jVersion")
-    implementation("org.libtorrent4j:libtorrent4j-android-x86_64:$libtorrent4jVersion")
+    if ("arm64-v8a" in targetAbis) implementation("org.libtorrent4j:libtorrent4j-android-arm64:$libtorrent4jVersion")
+    if ("armeabi-v7a" in targetAbis) implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent4jVersion")
+    if ("x86_64" in targetAbis) implementation("org.libtorrent4j:libtorrent4j-android-x86_64:$libtorrent4jVersion")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

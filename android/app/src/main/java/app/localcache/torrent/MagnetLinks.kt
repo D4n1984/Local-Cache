@@ -92,7 +92,6 @@ object MagnetLinks {
                 value.startsWith("udp://", ignoreCase = true) ||
                     value.startsWith("http://", ignoreCase = true) ||
                     value.startsWith("https://", ignoreCase = true) ||
-                    value.startsWith("ws://", ignoreCase = true) ||
                     value.startsWith("wss://", ignoreCase = true) -> trackers.add(value)
                 // `dht:<hash>` carries no address — DHT is enabled on the session anyway.
             }

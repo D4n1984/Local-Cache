@@ -11,8 +11,7 @@ import java.io.File
 /**
  * User configuration for Local Cache.
  *
- * Lives primarily in [Prefs], with a JSON copy next to the movies folder when possible
- * (USB root / USB cache dir, or internal LocalCache folder).
+ * Lives in private app data. USB files may be explicitly imported but are never exported here.
  */
 object AddonConfig {
     private const val TAG = "AddonConfig"
@@ -179,7 +178,7 @@ object AddonConfig {
             Prefs.setConfigStatus(
                 context,
                 written?.let { "Saved · ${it.absolutePath}" }
-                    ?: "Saved on TV (could not write JSON beside movies — prefs updated)",
+                    ?: "Saved in private TV preferences (private JSON copy unavailable)",
             )
             return Prefs.configStatus(context)!!
         }
@@ -254,9 +253,7 @@ object AddonConfig {
     )
 
     /**
-     * Places to look for / write the config. USB root is preferred (easy to edit on a PC),
-     * but Android 10+ often blocks writing there — same reason movies go under Android/data.
-     * Never throw: a failed root write used to crash Choose USB.
+     * Legacy import locations only. Never export configured URLs to these USB paths.
      */
     fun configCandidates(usbRoot: File, writableDir: File?): List<File> = buildList {
         add(File(usbRoot, CONFIG_FILE_NAME))
@@ -269,36 +266,13 @@ object AddonConfig {
     fun findExistingConfig(usbRoot: File, writableDir: File?): File? =
         configCandidates(usbRoot, writableDir).firstOrNull { it.isFile }
 
-    /** Try USB root first, then the app-writable folder on the stick. */
+    /** Private backup within app data; Android cloud/device backup is disabled in the manifest. */
     fun writeConfigSafely(context: Context, snapshot: Snapshot): File? {
-        val usbRoot = Prefs.usbRootPath(context)?.let { File(it) }
-        val writable = Prefs.cacheDirPath(context)?.let { File(it) }
-        val targets = configCandidates(
-            usbRoot ?: return writableWrite(writable, snapshot),
-            writable,
-        )
-        for (target in targets) {
-            val ok = runCatching {
-                target.parentFile?.mkdirs()
-                target.writeText(toJson(snapshot).toString(2) + "\n")
-                true
-            }.getOrDefault(false)
-            if (ok) {
-                Log.i(TAG, "wrote config to ${target.absolutePath}")
-                return target
-            }
-            Log.w(TAG, "could not write ${target.absolutePath}")
-        }
-        return null
-    }
-
-    private fun writableWrite(writable: File?, snapshot: Snapshot): File? {
-        if (writable == null) return null
-        val target = File(writable, CONFIG_FILE_NAME)
+        // Configured manifests can embed credentials in URL paths. Never export them to USB.
         return runCatching {
-            writable.mkdirs()
-            target.writeText(toJson(snapshot).toString(2) + "\n")
-            target
+            File(context.filesDir, CONFIG_FILE_NAME).apply {
+                writeText(toJson(snapshot).toString(2) + "\n")
+            }
         }.getOrNull()
     }
 
@@ -328,16 +302,7 @@ object AddonConfig {
 
             val existing = findExistingConfig(usbRoot, writableDir)
             if (existing == null) {
-                val created = writeConfigSafely(context, defaultTemplate())
-                writeReadmeSafely(context, writableDir)
-                runCatching { writeReadmeSafely(context, usbRoot) }
-                val msg = if (created != null) {
-                    "Created $CONFIG_FILE_NAME at ${created.absolutePath}. " +
-                        "Edit it on a PC (USB root is easiest) or open /settings, then Choose USB again."
-                } else {
-                    "Could not create $CONFIG_FILE_NAME on this drive. " +
-                        "On a PC, create it on the USB root, or use Edit config on TV / /settings."
-                }
+                val msg = "Config stays in private TV app storage. Use Edit config on TV or the authenticated local Settings URL."
                 Prefs.setConfigStatus(context, msg)
                 return msg
             }

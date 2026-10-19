@@ -87,9 +87,9 @@ object HealthCheck {
             val lan = LanReachability.verify(context, port = port)
             items += HealthItem(
                 lan.ok,
-                "LAN /health",
+                "Loopback /health",
                 if (lan.ok) {
-                    "Phone can use ${Prefs.settingsUrl(context)}"
+                    "Local server reachable; remote settings require an ADB tunnel"
                 } else {
                     lan.message
                 },

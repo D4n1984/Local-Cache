@@ -92,9 +92,10 @@ object DiagLog {
     }
 
     private fun add(level: String, msg: String) {
-        Log.i(TAG, msg)
+        val safeMessage = SecretRedactor.redact(msg)
+        Log.i(TAG, safeMessage)
         if (!enabled) return
-        val line = "${ts()} $level $msg"
+        val line = "${ts()} $level $safeMessage"
         synchronized(lock) {
             if (lines.size >= MAX_LINES) lines.removeFirst()
             lines.addLast(line)

@@ -37,12 +37,14 @@ class CacheForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Local Cache",
-            NotificationManager.IMPORTANCE_LOW,
-        )
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Local Cache",
+                NotificationManager.IMPORTANCE_LOW,
+            )
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -63,8 +65,6 @@ class CacheForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        acquireWakeLock()
-
         // The activity normally starts the server first; this covers a restart by Android.
         if (!ServerManager.isRunning()) {
             try {
@@ -83,6 +83,8 @@ class CacheForegroundService : Service() {
         notifyJob = scope.launch {
             val manager = getSystemService(NotificationManager::class.java)
             while (true) {
+                if (DownloadEngine.isBusy()) acquireWakeLock()
+                else if (wakeLock?.isHeld == true) runCatching { wakeLock?.release() }
                 val port = ServerManager.activePort() ?: Prefs.serverPort(this@CacheForegroundService)
                 val text = "${DownloadEngine.statusLine()} · port $port"
                 runCatching { manager.notify(NOTIFICATION_ID, buildNotification(text)) }

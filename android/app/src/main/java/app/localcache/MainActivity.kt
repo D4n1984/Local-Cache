@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnRefreshIp).setOnClickListener {
             refreshLanIp(showDialogIfMultiple = true)
         }
+        findViewById<Button>(R.id.btnRefreshIp).visibility = android.view.View.GONE
 
         val btnPublicIp = findViewById<Button>(R.id.btnPublicIp)
         if (BuildConfig.WUPLAY_MODE) {
@@ -108,7 +109,7 @@ class MainActivity : AppCompatActivity() {
             stopLocalServer()
         }
 
-        refreshLanIp(showDialogIfMultiple = Prefs.manualLanHost(this) == null)
+        refreshLanIp(showDialogIfMultiple = false)
         refreshUi()
         checkForUpdate()
         if (BuildConfig.WUPLAY_MODE && Prefs.publicHost(this) == null) {
@@ -252,7 +253,7 @@ class MainActivity : AppCompatActivity() {
             updateText.visibility = android.view.View.VISIBLE
             updateText.text = buildString {
                 append(update.bannerLine())
-                append("\nOpen on phone: ")
+                append("\nLocal settings (ADB tunnel): ")
                 append(Prefs.settingsUrl(this@MainActivity))
                 append("\nor download: ")
                 append(update.apkUrl ?: update.releaseUrl ?: UpdateChecker.REPO_RELEASES_URL)
@@ -270,7 +271,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         urlText.text = buildString {
-            appendLine("1) Configure first (phone/PC on same Wi‑Fi):")
+            appendLine("1) Configure on TV, or use an ADB tunnel from your computer:")
+            appendLine("adb forward tcp:$port tcp:$port")
             appendLine(Prefs.settingsUrl(this@MainActivity))
             appendLine("Paste your Torrentio / Comet manifest.json URLs, then Save.")
             appendLine()
@@ -410,7 +412,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Edit config on TV")
             .setMessage(
                 "To add multiple Torrentio/Comet manifests (needed when each link only has one debrid), " +
-                    "use your phone on the same Wi‑Fi — open ${Prefs.settingsUrl(this)} and tap the + buttons. " +
+                    "use the authenticated loopback Settings URL (${Prefs.settingsUrl(this)}) via an ADB tunnel. " +
                     "On TV you can still paste one URL per line below if you must.",
             )
             .setView(layout)

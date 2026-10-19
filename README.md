@@ -1,3 +1,44 @@
+# Local Cache — D4n1984 / Xiaomi Android 11
+
+Fork de [heroiamarelo1/Local-Cache](https://github.com/heroiamarelo1/Local-Cache), conservando licencia MIT y autoría.
+Ver **[docs/HARDENING.md](docs/HARDENING.md)** para revisión, alcance y limitaciones.
+
+**Prototipo pendiente de validación completa en la Xiaomi.** No se ha instalado ni configurado con
+credenciales del usuario. Este fork escucha **solo en `127.0.0.1`**, no en LAN/WAN.
+
+- Identidad separada: `app.localcache.d4n1984`, addon `org.localcache.d4n1984`.
+- Ajustes con token local, URLs sensibles fuera del USB, backup desactivado.
+- Reintentos HTTP con validación de rangos/tamaño y conservación del parcial.
+- ABI predeterminada `armeabi-v7a`, la de la Xiaomi examinada.
+- No promete importar/reanudar parciales de Unchained: no comparten identidad/metadata.
+
+## Compilar y probar en OrbStack / Docker
+
+```sh
+rtk proxy docker build -t local/local-cache-builder .
+rtk proxy docker run --rm -v "$PWD:/work" -v local-cache-gradle:/home/builder/.gradle \
+  local/local-cache-builder :app:testStandardDebugUnitTest :app:assembleStandardRelease :app:lintStandardRelease
+```
+
+Java y SDK permanecen en el contenedor, con emulación amd64 en Apple Silicon.
+El APK release es **sin firmar**; no se publica ni instala automáticamente.
+Para otras ABI: `-Plocalcache.abis=armeabi-v7a,arm64-v8a`.
+
+Para configurar desde el Mac, iniciar el servidor en la TV y crear un túnel:
+
+```sh
+rtk proxy adb -s <IP-TV>:5555 forward tcp:7100 tcp:7100
+```
+
+Abrir en el Mac la URL de ajustes que muestra la app. Contiene un token: **no compartirla en
+capturas, issues o commits**. Se canjea por una cookie HttpOnly/SameSite para el panel local.
+También puede usarse «Edit config on TV». No abrir puertos del router.
+
+## README original de referencia
+
+Lo siguiente describe el upstream, **no** la política de red de este fork.
+Las instrucciones LAN/WAN y la variante WuPlay no están soportadas por esta rama.
+
 # Local Cache 🍿💾
 
 ![Local Cache banner](docs/local-cache-banner.png)

@@ -14,9 +14,9 @@ import java.util.concurrent.atomic.AtomicReference
  */
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
-    const val REPO_RELEASES_URL = "https://github.com/heroiamarelo1/Local-Cache/releases"
+    const val REPO_RELEASES_URL = "https://github.com/D4n1984/Local-Cache/releases"
     const val LATEST_API_URL =
-        "https://api.github.com/repos/heroiamarelo1/Local-Cache/releases/latest"
+        "https://api.github.com/repos/D4n1984/Local-Cache/releases/latest"
     const val DONATE_URL = "https://www.paypal.com/paypalme/heroiamarelo/2"
 
     private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L

@@ -11,7 +11,7 @@ object UpstreamProxy {
     private const val TAG = "UpstreamProxy"
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     data class ProxyResult(
@@ -86,6 +86,12 @@ object UpstreamProxy {
             throw IllegalStateException("Upstream empty body")
         }
 
+        // Never serve byte zero while advertising a requested nonzero range to the player.
+        if (start > 0 && response.code != 206) {
+            response.close()
+            throw IllegalStateException("Upstream ignored playback range")
+        }
+
         var total = totalBytes
         var responseStart = start
         var responseEnd = end
@@ -100,6 +106,13 @@ object UpstreamProxy {
                     total = match.groupValues[3].toLong()
                 }
             }
+            if (responseStart != start) {
+                response.close()
+                throw IllegalStateException("Misaligned upstream playback range")
+            }
+        } else if (response.code == 206) {
+            response.close()
+            throw IllegalStateException("Missing Content-Range")
         } else if (responseEnd < 0) {
             val len = body.contentLength()
             responseEnd = if (len > 0) responseStart + len - 1 else responseStart
