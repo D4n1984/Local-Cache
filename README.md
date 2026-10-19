@@ -3,8 +3,9 @@
 Fork de [heroiamarelo1/Local-Cache](https://github.com/heroiamarelo1/Local-Cache), conservando licencia MIT y autoría.
 Ver **[docs/HARDENING.md](docs/HARDENING.md)** para revisión, alcance y limitaciones.
 
-**Prototipo pendiente de validación completa en la Xiaomi.** No se ha instalado ni configurado con
-credenciales del usuario. Este fork escucha **solo en `127.0.0.1`**, no en LAN/WAN.
+**Prototipo instalado para pruebas en la Xiaomi; reproducción real pendiente.** La prueba USB
+con corte y reanudación ha pasado; véase el informe. Este fork escucha **solo en `127.0.0.1`**,
+no en LAN/WAN. No incluir URLs configuradas ni credenciales en issues o commits.
 
 - Identidad separada: `app.localcache.d4n1984`, addon `org.localcache.d4n1984`.
 - Ajustes con token local, URLs sensibles fuera del USB, backup desactivado.

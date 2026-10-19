@@ -5,8 +5,8 @@
 - Upstream: `heroiamarelo1/Local-Cache`, commit `895f47c2cf530a6ba1a991bd4313f2c899f11c3c` (v0.5.8).
 - Fork: https://github.com/D4n1984/Local-Cache ; rama `hardening/xiaomi-android11`.
 - Objetivo: Xiaomi MiTV-AFKR0 / Android 11 / ARM 32 bits / 2 GB RAM / USB exFAT.
-- Revisión estática y pruebas sintéticas. No se usan cuentas ni URLs reales de Real-Debrid.
-- No se instala el upstream ni el fork en la TV durante esta revisión.
+- Revisión estática y pruebas automatizadas con datos sintéticos, sin URLs reales en los tests.
+- Tras la revisión inicial, el usuario autorizó instalar el fork y probarlo en la TV (véase abajo).
 - No es auditoría independiente ni garantía de ausencia de vulnerabilidades.
 
 ## Hallazgos en el upstream
@@ -102,8 +102,25 @@ Validación local del 2026-10-19, en contenedor OrbStack (sin credenciales reale
   Se corrigió el uso original de NotificationChannel sin guardia de API 26 para minSDK 24.
 - `validate-dev-standards`: 0 hallazgos; análisis estático, no prueba de seguridad exhaustiva.
 
-Pendiente la prueba real en Xiaomi (USB, Stremio, reinicio y recuperación de un corte),
-con consentimiento para instalar y sin compartir tokens en el chat.
+### Primera prueba en Xiaomi, autorizada por el usuario
+
+- APK de prueba firmado con clave local persistente, fuera del repositorio; instalación correcta.
+- Servidor iniciado y USB seleccionado en su directorio específico. No se borran medios existentes.
+- `/health` y manifest responden 200; panel sin token 401, Origin/Host ajenos 403,
+  GET `/cancel` autenticado 405. Puerto no accesible desde la LAN del Mac.
+- Fuente HTTP sintética mediante túnel ADB inverso temporal: 32 MiB, corte provocado a 8 MiB.
+  El dispositivo reanudó con `Range: bytes=8388608-` e `If-Range` y terminó al 100%.
+  SHA-256 en USB idéntico al generado en el Mac:
+  `e09320c5b00b34bb704802136c599a95b3996332ba84d7c7f21112b6231b6bd0`.
+- Se retiraron el archivo, la fuente y el túnel de prueba. No es un ensayo de velocidad de RD.
+- Addon instalado desde la UI de Stremio con URL HTTP explícita. El enlace `stremio://host/...`
+  se convirtió a HTTPS en esta versión y falló; usar «Add addon» con la URL HTTP del README.
+- Configuración de Torrentio RD existente reutilizada localmente, sin imprimir su URL ni clave.
+  Consulta real de streams correcta (7 opciones locales para `tt0063350`), sin iniciar su descarga.
+- Pendiente: reproducción elegida por el usuario con RD, archivos grandes, reinicio completo,
+  recuperación tras matar el proceso y comportamiento con enlaces RD caducados.
+- Defectos cosméticos detectados: algunos textos heredados aún hablan de configuración en USB
+  o IP LAN, aunque la configuración efectiva es privada y el servidor usa loopback.
 
 ## Fuentes
 
