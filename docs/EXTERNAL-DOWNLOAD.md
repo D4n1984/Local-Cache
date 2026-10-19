@@ -59,7 +59,11 @@ El receptor no necesita otra copia de la clave RD: recibe el enlace resuelto que
 - Entrega real verificada desde una fuente de Torrentio RD (`tt0063350`) con Default Player
   temporalmente en External: selector Android → Local Cache → Solo una vez. La actividad
   recibió el enlace HTTPS y el nombre del MKV; no inició otra transferencia sin confirmar.
-- La descarga real preexistente se retomó y siguió avanzando en segundo plano al navegar
-  por Stremio. No se usa su título ni su enlace en las pruebas automatizadas.
+- La descarga real preexistente se retomó y terminó en segundo plano: archivo final de
+  5.121.570.152 bytes (4,77 GiB) en USB. Se esperó la sincronización real del USB antes de
+  actualizar el APK; no se declaró completada mientras seguía al 99%.
+- Tras la actualización final, la pantalla recupera la descarga completa desde disco y muestra
+  100% sin necesitar el enlace entrante. Se verificó Exo como predeterminado restaurado.
+  No se usa el título ni el enlace real en las pruebas automatizadas.
 - Pendiente: una descarga RD completa iniciada por este receptor, enlaces caducados,
   reinicio completo y revisión visual más amplia. Es un prototipo, no una versión estable.
