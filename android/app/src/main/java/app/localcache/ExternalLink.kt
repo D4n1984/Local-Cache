@@ -19,8 +19,8 @@ object ExternalLink {
         val file = runCatching {
             URLDecoder.decode(uri.rawPath.orEmpty().substringAfterLast('/').replace("+", "%2B"), "UTF-8")
         }.getOrDefault("")
-        val hint = title?.takeIf { it.isNotBlank() }
-            ?: file.takeIf { it.matches(Regex("(?i).+\\.(mkv|mp4|webm|avi|m4v|mov|ts)")) }
+        val hint = file.takeIf { it.matches(Regex("(?i).+\\.(mkv|mp4|webm|avi|m4v|mov|ts)")) }
+            ?: title?.takeIf { it.isNotBlank() }
             ?: "Descarga recibida de Stremio"
         val safeTitle = SecretRedactor.redact(hint)
             .replace(Regex("[\\p{Cc}\\p{Cf}]"), " ").trim().take(180)

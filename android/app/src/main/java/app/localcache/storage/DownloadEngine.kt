@@ -427,7 +427,7 @@ object DownloadEngine {
             return null
         }
 
-        val finalFile = File(cacheRoot, CachePaths.safeName(entry.cacheKey) + CachePaths.guessExt(entry.url))
+        val finalFile = CachePaths.forEntry(context, entry) ?: return null
         entry.filePath = finalFile.absolutePath
         return Target(finalFile, CachePaths.partFile(finalFile))
     }
@@ -458,6 +458,7 @@ object DownloadEngine {
             )
             if (run.cancelled) return
             if (target.part.length() < MIN_VALID_BYTES) throw IllegalStateException("Video is too small")
+            check(!target.final.exists()) { "Destination already exists; not overwriting" }
             if (!target.part.renameTo(target.final)) throw IllegalStateException("Could not promote verified partial")
             entry.status = "complete"
             entry.downloadedBytes = target.final.length()

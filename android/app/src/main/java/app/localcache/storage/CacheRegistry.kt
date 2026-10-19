@@ -122,7 +122,7 @@ object CacheRegistry {
     fun attachCachePath(context: android.content.Context, cacheKey: String) {
         val entry = get(cacheKey) ?: return
         if (entry.filePath == null) {
-            entry.filePath = CachePaths.finalFile(context, cacheKey, entry.url)?.absolutePath
+            entry.filePath = CachePaths.forEntry(context, entry)?.absolutePath
         }
         refreshFromDisk(cacheKey)
     }

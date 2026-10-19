@@ -3,9 +3,10 @@
 Fork de [heroiamarelo1/Local-Cache](https://github.com/heroiamarelo1/Local-Cache), conservando licencia MIT y autoría.
 Ver **[docs/HARDENING.md](docs/HARDENING.md)** para revisión, alcance y limitaciones.
 
-**Actual: [Movies persistente y gestor sin servidor](docs/PERSISTENT-MOVIES.md), v0.5.9-d4n.3.**
+**Actual: [Nombres originales y USB persistente](docs/ORIGINAL-FILENAMES.md), v0.5.9-d4n.4.**
 Los vídeos se guardan en `Movies` de la raíz del USB, fuera de la carpeta borrable de la app.
 Requiere acceso especial a archivos en esta TV; no elimina películas automáticamente.
+[Nombres originales y borrado con VLC](docs/ORIGINAL-FILENAMES.md).
 
 **[Descarga desde el selector de reproductores externos](docs/EXTERNAL-DOWNLOAD.md).**
 Selecciona una fuente de Torrentio RD y envíala a «Descargar al USB», sin elegir otro
